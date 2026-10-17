@@ -18,14 +18,14 @@ cp .env.example .env   # fill in real values — never commit .env
 
 ## Firebase projects
 
-Three environments: `pattern-mirror-dev`, `pattern-mirror-staging`, `pattern-mirror-prod` (exact IDs may differ — see `.firebaserc` once created).
+Only `pattern-mirror-dev` exists so far (Firestore + Email/Password Auth enabled, Spark/free plan). `staging` and `prod` are deferred until closer to launch — see `.firebaserc`.
 
 ```bash
 firebase use dev        # switch to the dev project
 firebase emulators:start   # run Firestore/Auth/Functions emulators locally
 ```
 
-Always develop and test against `dev` or the emulators. Never point local work at `staging` or `prod` directly.
+Always develop and test against `dev` or the emulators. When `staging`/`prod` are created later, never point local work at them directly.
 
 ## Running tests
 

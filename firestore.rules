@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can only read/write their own documents
+    match /users/{userId} {
+      allow read, update: if request.auth.uid == userId;
+      allow create: if request.auth.uid == userId;
+      allow delete: if false; // Never delete user docs
+    }
+
+    // Users can read their own jobs
+    match /jobs/{jobId} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow create: if request.auth.uid != null;
+      allow update: if resource.data.userId == request.auth.uid;
+      allow delete: if false; // Never delete, archive instead
+    }
+
+    // Users can read their own reports
+    match /reports/{reportId} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow create: if false; // Created by backend only
+      allow update: if resource.data.userId == request.auth.uid;
+      allow delete: if false; // Never delete, archive instead
+    }
+
+    // Extraction cache: users can read, backend creates
+    match /extraction_cache/{dataHash} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow create: if false; // Backend only
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Checkouts: users can read their own; only backend (Admin SDK, bypasses rules) creates/updates
+    match /checkouts/{checkoutId} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Audit logs: users can read their own
+    match /audit_logs/{logId} {
+      allow read: if logId.split('_')[1] == request.auth.uid;
+      allow create: if false; // Backend only
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Deny all by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

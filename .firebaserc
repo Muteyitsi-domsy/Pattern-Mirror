@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "pattern-mirror-dev",
+    "dev": "pattern-mirror-dev"
+  }
+}
