@@ -48,6 +48,29 @@ firebase emulators:start --only auth,firestore
 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm run dev
 ```
 
+To also exercise Cloud Functions / the job queue (`backend/functions`'s
+`api` and `processReportJob` functions) via the Functions emulator instead
+of `npm run dev`'s plain Express server:
+
+```bash
+cd backend/functions && npm install && npm run build   # first time / after changes
+cd ../..
+firebase emulators:start --only auth,firestore,functions
+# api is served at http://127.0.0.1:5001/pattern-mirror-dev/us-central1/api
+```
+
+The Functions emulator does **not** auto-rebuild on source changes — rerun
+`npm run build` inside `backend/functions` after editing `backend/functions/src/**`
+and restart the emulator to pick it up.
+
+**Enqueueing a task from a plain host script** (e.g. a one-off debug/admin
+script run via `ts-node`, not through a deployed/emulated function) needs
+real Application Default Credentials and will fail with
+`ENOTFOUND metadata.google.internal` otherwise — code running *inside* an
+emulated function doesn't have this problem. If you need to trigger
+`enqueueJob()` for manual testing, do it from a temporary route on the
+already-emulated `api` function rather than a standalone script.
+
 **Testing `/auth/logout` locally:** its revocation check (`verifyIdToken(token, true)`)
 calls `getUser()`, which needs real Admin SDK credentials when *not* running
 against the Auth emulator. Without a service account key or
@@ -76,12 +99,20 @@ npm run format
 
 ```
 /Coding Build Docs      — specs (read PHASE_SPECS.md first)
-/backend/functions/src  — Express API (auth so far; analysis engines land in Phase 1-2)
+/backend/functions      — deployable Cloud Functions bundle (own package.json, compiles src/ -> lib/)
+  /src                  — Express API + job queue worker (analysis engines land in Phase 1-2)
 /frontend               — Next.js app (login page so far; full UI lands in Phase 3.3) — own package.json/.env.local
 firebase.json            — Firebase project config (hosting, functions, emulators)
 firestore.rules          — Firestore security rules
 firestore.indexes.json  — Firestore composite indexes
 ```
+
+Root `package.json` covers local dev/test tooling (runs `backend/functions/src`
+directly via `ts-node`/`jest`, no build step needed for that). `backend/functions/package.json`
+is the separate, minimal bundle Firebase actually deploys — keep both in sync
+when adding a new runtime dependency (e.g. a new npm package the API code
+imports needs adding to *both* package.jsons, since deploy only installs
+from the inner one).
 
 ## Debugging
 
