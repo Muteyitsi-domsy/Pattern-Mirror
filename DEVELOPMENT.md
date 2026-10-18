@@ -27,6 +27,36 @@ firebase emulators:start   # run Firestore/Auth/Functions emulators locally
 
 Always develop and test against `dev` or the emulators. When `staging`/`prod` are created later, never point local work at them directly.
 
+## Running the app locally
+
+```bash
+# Backend API (reads .env; defaults to port 8000)
+npm run dev
+
+# Frontend (separate npm project — has its own package.json/.env.local)
+cd frontend
+npm install   # first time only
+npm run dev   # http://localhost:3000
+```
+
+To run the backend against the Firestore/Auth emulators instead of the real
+`pattern-mirror-dev` project (recommended for anything that writes data):
+
+```bash
+firebase emulators:start --only auth,firestore
+# in another terminal:
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm run dev
+```
+
+**Testing `/auth/logout` locally:** its revocation check (`verifyIdToken(token, true)`)
+calls `getUser()`, which needs real Admin SDK credentials when *not* running
+against the Auth emulator. Without a service account key or
+`gcloud auth application-default login`, that call fails and the endpoint
+returns an error — harmless for local dev (the frontend catches it and still
+clears the client-side session), but don't be surprised by it. It works
+without any extra setup inside deployed Cloud Functions (credentials are
+automatic there) and against the Auth emulator.
+
 ## Running tests
 
 ```bash
@@ -45,10 +75,10 @@ npm run format
 ## Project layout
 
 ```
-/Coding Build Docs     — specs (read PHASE_SPECS.md first)
-/backend/functions      — Firebase Cloud Functions (API, workers, analysis engines) — added in Phase 0.5+
-/frontend               — Next.js app — added in Phase 3.3
-firebase.json           — Firebase project config (hosting, functions, emulators)
+/Coding Build Docs      — specs (read PHASE_SPECS.md first)
+/backend/functions/src  — Express API (auth so far; analysis engines land in Phase 1-2)
+/frontend               — Next.js app (login page so far; full UI lands in Phase 3.3) — own package.json/.env.local
+firebase.json            — Firebase project config (hosting, functions, emulators)
 firestore.rules          — Firestore security rules
 firestore.indexes.json  — Firestore composite indexes
 ```

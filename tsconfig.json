@@ -15,5 +15,8 @@
     "sourceMap": true
   },
   "include": ["backend/functions/src/**/*.ts"],
-  "exclude": ["node_modules", "lib", "frontend"]
+  "exclude": ["node_modules", "lib", "frontend"],
+  "ts-node": {
+    "files": true
+  }
 }
