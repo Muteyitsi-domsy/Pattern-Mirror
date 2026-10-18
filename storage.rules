@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Temp journal uploads (gs://bucket/temp/{jobId}/journal.{ext}): written
+    // and read only by the backend (Admin SDK, which bypasses these rules)
+    // during processing, then deleted. Never exposed to clients directly.
+    match /temp/{jobId}/{fileName} {
+      allow read, write: if false;
+    }
+
+    // Encrypted report PDFs (gs://bucket/reports/{reportId}.pdf): clients
+    // download via time-limited signed URLs (pdfSignedUrl in the report's
+    // Firestore doc), which are pre-authorized and bypass these rules
+    // entirely — so direct client SDK access here is correctly denied.
+    match /reports/{fileName} {
+      allow read, write: if false;
+    }
+
+    // Deny all by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
