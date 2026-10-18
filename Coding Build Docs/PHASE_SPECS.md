@@ -164,34 +164,39 @@ Week 11-15: Phase 3    — Frontend, Report Gen, Polish (4 subphases)
 - [ ] Job status polling working
 
 **Tasks:**
-1. Create Cloud Functions project structure:
+1. Create Cloud Functions project structure (under the existing `backend/functions/src/` from Phase 0.3, not a separate `/functions` root):
    ```
-   /functions
-     index.ts (entry point)
-     /triggers
+   backend/functions/src/
+     triggers/
        onJobQueued.ts (worker)
-     /services
+     services/
        jobService.ts
-     /models
+     models/
        Job.ts
    ```
-2. Create Cloud Task queue: `pattern-mirror-jobs`
-3. Implement basic job creation in Cloud Task
+2. No manual Cloud Tasks queue creation needed — `firebase-functions` v2 task-queue functions (`onTaskDispatched`) provision their own backing Cloud Tasks queue automatically on `firebase deploy --only functions`, scoped to the function name. There is no queue named `pattern-mirror-jobs` to create by hand.
+3. Implement basic job creation (`jobService.createJob`) + enqueueing (`admin.functions().taskQueue(functionName).enqueue(data)`, from `firebase-admin/functions` — not a raw `@google-cloud/tasks` client)
 4. Implement worker that acknowledges jobs (logs "processing")
 5. Test: Create job → Check status → Job progresses
 
-**Code Example:**
+**Code Example (corrected to the real `firebase-functions` v2 API — the original example below used `functions.cloudTasks.onDispatch`, which does not exist in the installed package):**
 ```typescript
-// Cloud Function triggered by Cloud Task
-import * as functions from 'firebase-functions';
-import { processJob } from './services/jobService';
+// backend/functions/src/triggers/onJobQueued.ts
+import { onTaskDispatched } from 'firebase-functions/v2/tasks';
+import { processJob } from '../services/jobService';
 
-export const processReportJob = functions.cloudTasks.onDispatch(async (req) => {
-  const { jobId } = req.body;
+export const processReportJob = onTaskDispatched<{ jobId: string }>(async (req) => {
+  const { jobId } = req.data;
   console.log(`Processing job ${jobId}`);
-  
+
   await processJob(jobId);
 });
+```
+```typescript
+// Enqueueing, e.g. from jobService.enqueueJob()
+import { getFunctions } from 'firebase-admin/functions';
+
+await getFunctions().taskQueue<{ jobId: string }>('processReportJob').enqueue({ jobId });
 ```
 
 **Acceptance Criteria:**

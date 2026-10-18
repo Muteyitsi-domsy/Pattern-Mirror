@@ -1,0 +1,25 @@
+{
+  "name": "pattern-mirror-functions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deployable Cloud Functions bundle. Source lives in src/; compiled to lib/ for the Functions runtime. Root package.json covers local dev/test tooling for this same source.",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "serve": "npm run build && firebase emulators:start --only functions"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.1",
+    "firebase-functions": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.2",
+    "typescript": "^5.4.5"
+  }
+}

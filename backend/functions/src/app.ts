@@ -1,5 +1,6 @@
 import express, { Express } from 'express';
 import { loginUser, logoutUser } from './api/auth';
+import { getJobStatus } from './api/reports';
 import { verifyFirebaseToken } from './middleware/auth';
 
 export function createApp(): Express {
@@ -15,6 +16,8 @@ export function createApp(): Express {
 
   app.post('/auth/login', loginUser);
   app.post('/auth/logout', verifyFirebaseToken, logoutUser);
+
+  app.get('/api/reports/:jobId/status', verifyFirebaseToken, getJobStatus);
 
   return app;
 }

@@ -5,7 +5,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "dev": "ts-node backend/functions/src/server.ts",
+    "dev": "ts-node --project tsconfig.json backend/functions/src/server.ts",
     "build": "tsc -p tsconfig.json",
     "test": "jest",
     "test:watch": "jest --watch",
