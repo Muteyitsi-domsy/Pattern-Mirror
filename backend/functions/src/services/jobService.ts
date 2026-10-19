@@ -2,31 +2,64 @@ import { randomUUID } from 'crypto';
 import { Timestamp } from 'firebase-admin/firestore';
 import { getFunctions } from 'firebase-admin/functions';
 import { db } from '../firebaseAdmin';
-import { Job } from '../models/Job';
+import { DataType, Framework, Job, UserContext } from '../models/Job';
 
 const JOBS_COLLECTION = 'jobs';
 const PROCESS_REPORT_JOB_FUNCTION = 'processReportJob';
 
-/**
- * Creates a queued job record. Phase 0.5 skeleton — doesn't yet take
- * dataType/focusQuestions/payment info (Phase 1.1's POST /api/reports/create
- * populates those once upload/payment exist).
- */
-export async function createJob(userId: string): Promise<Job> {
+/** Matches API_SPEC.md's documented SLA (section 8). */
+const ESTIMATED_SECONDS_BY_DATA_TYPE: Record<DataType, number> = {
+  structured: 480, // ~8 min
+  semi: 600, // ~10 min
+  unstructured: 900, // ~15 min
+};
+
+export function estimateCompletionSeconds(dataType: DataType): number {
+  return ESTIMATED_SECONDS_BY_DATA_TYPE[dataType];
+}
+
+export interface CreateJobParams {
+  userId: string;
+  dataType: DataType;
+  journalCount: number;
+  journalStoragePath: string;
+  focusQuestions: [string, string];
+  frameworks: Framework[];
+  userContext: UserContext;
+  userMbtiType: string | null;
+  userEnneagramType: string | null;
+  chargeAmount: number;
+  checkoutId: string | null;
+}
+
+/** Creates a queued job record (POST /api/reports/create, Phase 1.1). */
+export async function createJob(params: CreateJobParams): Promise<Job> {
   const job: Job = {
     jobId: randomUUID(),
-    userId,
-    reportId: null,
+    userId: params.userId,
+    reportId: randomUUID(),
     status: 'queued',
     progress: 0,
     currentPhase: 'Queued',
     createdAt: Timestamp.now(),
     startedAt: null,
     completedAt: null,
-    estimatedRemainingSeconds: null,
+    estimatedRemainingSeconds: estimateCompletionSeconds(params.dataType),
     errorMessage: null,
     errorPhase: null,
     errorRecoverable: null,
+
+    dataType: params.dataType,
+    journalCount: params.journalCount,
+    journalStoragePath: params.journalStoragePath,
+    focusQuestions: params.focusQuestions,
+    frameworks: params.frameworks,
+    userContext: params.userContext,
+    userMbtiType: params.userMbtiType,
+    userEnneagramType: params.userEnneagramType,
+
+    chargeAmount: params.chargeAmount,
+    checkoutId: params.checkoutId,
   };
 
   await db.collection(JOBS_COLLECTION).doc(job.jobId).set(job);
@@ -45,7 +78,7 @@ export async function getJob(jobId: string): Promise<Job | null> {
 
 /**
  * Worker skeleton (Phase 0.5): acknowledges the job and marks it complete.
- * Phase 1-2 replaces the body of this function with the real
+ * Phase 1.2+ replaces the body of this function with the real
  * extraction -> analysis -> generation -> finalizing pipeline; the status
  * progression and Firestore update pattern established here stays the same.
  */

@@ -24,16 +24,41 @@ function mockJobDoc() {
   return doc;
 }
 
+const baseParams = {
+  userId: 'user_abc123',
+  dataType: 'structured' as const,
+  journalCount: 45,
+  journalStoragePath: 'temp/upload_1/journal.csv',
+  focusQuestions: ['Q1', 'Q2'] as [string, string],
+  frameworks: [],
+  userContext: {},
+  userMbtiType: null,
+  userEnneagramType: null,
+  chargeAmount: 0,
+  checkoutId: null,
+};
+
 describe('createJob', () => {
-  it('writes a queued job with the given userId', async () => {
+  it('writes a queued job with the given params', async () => {
     const doc = mockJobDoc();
 
-    const job = await createJob('user_abc123');
+    const job = await createJob(baseParams);
 
     expect(job.userId).toBe('user_abc123');
     expect(job.status).toBe('queued');
     expect(job.progress).toBe(0);
+    expect(job.reportId).toEqual(expect.any(String));
     expect(doc.set).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user_abc123', status: 'queued' }));
+  });
+
+  it('sets estimatedRemainingSeconds per the documented SLA for the data type', async () => {
+    mockJobDoc();
+
+    const structured = await createJob(baseParams);
+    const unstructured = await createJob({ ...baseParams, dataType: 'unstructured' });
+
+    expect(structured.estimatedRemainingSeconds).toBe(480);
+    expect(unstructured.estimatedRemainingSeconds).toBe(900);
   });
 });
 

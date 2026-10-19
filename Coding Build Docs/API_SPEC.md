@@ -140,17 +140,59 @@ Frontend uses Firebase SDK directly. Backend validates token on each request.
 
 ### 4.3 Reports
 
+#### Get Upload URL
+**POST /api/reports/upload-url**
+
+Must be called before Create Report Job. Returns a short-lived signed Cloud
+Storage URL the client uploads the journal file to **directly** — the file
+never passes through our API.
+
+**Why:** Cloud Functions gen2 enforces a hard, non-configurable 32MB limit
+on uncompressed HTTP request bodies (see [Cloud Functions quotas](https://firebase.google.com/docs/functions/quotas)).
+Base64 inflates a file by ~4/3, so embedding the documented 50MB file limit
+directly in this request's JSON body would require ~66.7MB — blowing past
+that ceiling at roughly 23MB of raw file content. A direct-to-Storage
+upload has no such limit and is the standard pattern for this reason.
+
+**Request:**
+```json
+{
+  "fileName": "mood_journal_march.csv"
+}
+```
+
+**Field Validation:**
+- `fileName`: Required. Extension must be one of: csv, json, txt, md
+
+**Response (200):**
+```json
+{
+  "uploadId": "upload_uuid_12345",
+  "uploadUrl": "https://storage.googleapis.com/...(signed, expires in 15 min)...",
+  "storagePath": "temp/upload_uuid_12345/journal.csv"
+}
+```
+
+The client then does a direct `PUT` of the raw file bytes to `uploadUrl`
+with a matching `Content-Type` header (no auth header needed — the
+signature in the URL itself is the authorization). `uploadId` is scoped to
+the requesting user server-side (tracked in `/uploads/{uploadId}`, not just
+a bare guessable reference) — passing someone else's `uploadId` to Create
+Report Job below returns 404, not another user's file.
+
+---
+
 #### Create Report Job
 **POST /api/reports/create**
 
-Initiates a new pattern analysis job.
+Initiates a new pattern analysis job. Requires a completed direct upload
+(see Get Upload URL above) first.
 
 **Request:**
 ```json
 {
   "dataType": "structured",
-  "journalFile": "base64_encoded_content",
-  "fileName": "mood_journal_march.csv",
+  "uploadId": "upload_uuid_12345",
   "focusQuestions": [
     "What habit is costing me peace?",
     "Where do I abandon my values?"
@@ -171,11 +213,19 @@ Initiates a new pattern analysis job.
 
 **Field Validation:**
 - `dataType`: Must be `structured`, `semi`, or `unstructured`
+- `uploadId`: Required. Must reference a completed upload owned by this user (see Get Upload URL)
 - `focusQuestions`: Array of exactly 2 strings
 - `frameworks`: Array of 0-2 items, valid values: `mbti`, `enneagram`, `values`
-- `journalFile`: Base64-encoded, ≤50MB
-- `fileName`: Required for storage reference
 - `userMbtiType`, `userEnneagramType`: Optional (user can skip if unknown)
+
+**Response (400, upload not found/not yet completed):**
+```json
+{
+  "error": "validation_error",
+  "message": "Uploaded file not found — complete the direct upload first",
+  "field": "uploadId"
+}
+```
 
 **Response (202 Accepted):**
 ```json

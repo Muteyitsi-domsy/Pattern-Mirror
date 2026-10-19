@@ -20,12 +20,16 @@ ui-debug.log
 # Service account keys — never commit these
 *serviceAccountKey*.json
 *firebase-adminsdk*.json
+backend/functions/dev-signer-key.json
 
 # Editor/OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Claude Code local state
+.claude/
 
 # Logs
 npm-debug.log*

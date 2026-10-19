@@ -1,9 +1,14 @@
 import { Request, Response } from 'express';
 import { verifyFirebaseToken } from '../auth';
 import { auth } from '../../firebaseAdmin';
+import { ensureUserRecord } from '../../services/userService';
 
 jest.mock('../../firebaseAdmin', () => ({
   auth: { verifyIdToken: jest.fn() },
+}));
+
+jest.mock('../../services/userService', () => ({
+  ensureUserRecord: jest.fn(),
 }));
 
 function mockRes(): Response {
@@ -18,6 +23,7 @@ describe('verifyFirebaseToken', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (ensureUserRecord as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('rejects a request with no Authorization header', async () => {
@@ -54,14 +60,15 @@ describe('verifyFirebaseToken', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('attaches userId and calls next on a valid token', async () => {
-    (auth.verifyIdToken as jest.Mock).mockResolvedValue({ uid: 'user_abc123' });
+  it('attaches userId, ensures the user record exists, and calls next on a valid token', async () => {
+    (auth.verifyIdToken as jest.Mock).mockResolvedValue({ uid: 'user_abc123', email: 'a@b.com' });
     const req = { headers: { authorization: 'Bearer goodtoken' } } as Request;
     const res = mockRes();
 
     await verifyFirebaseToken(req, res, next);
 
     expect(req.userId).toBe('user_abc123');
+    expect(ensureUserRecord).toHaveBeenCalledWith('user_abc123', 'a@b.com');
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });
@@ -74,5 +81,17 @@ describe('verifyFirebaseToken', () => {
     await verifyFirebaseToken(req, res, next);
 
     expect(auth.verifyIdToken).toHaveBeenCalledWith('goodtoken', true);
+  });
+
+  it('returns 500, not 401, when ensureUserRecord fails (token itself was valid)', async () => {
+    (auth.verifyIdToken as jest.Mock).mockResolvedValue({ uid: 'user_abc123' });
+    (ensureUserRecord as jest.Mock).mockRejectedValue(new Error('firestore unavailable'));
+    const req = { headers: { authorization: 'Bearer goodtoken' } } as Request;
+    const res = mockRes();
+
+    await verifyFirebaseToken(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(next).not.toHaveBeenCalled();
   });
 });

@@ -41,6 +41,14 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Uploads: users can read their own; only backend (Admin SDK) creates/updates
+    match /uploads/{uploadId} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     // Audit logs: users can read their own
     match /audit_logs/{logId} {
       allow read: if logId.split('_')[1] == request.auth.uid;

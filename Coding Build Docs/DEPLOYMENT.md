@@ -90,13 +90,46 @@ There's no one-command "rollback to previous" for Functions — it's revert-and-
 
 ---
 
-## 6. Pre-Launch Checklist
+## 6. Storage Signed URLs — Required IAM Permission
+
+`POST /api/reports/upload-url` (Phase 1.1) generates a V4 signed URL for
+direct-to-Storage uploads via `@google-cloud/storage`'s `getSignedUrl()`.
+Signing needs either a real private key on disk, or (what deployed Cloud
+Functions get by default) the ability to call the IAM `signBlob` API as the
+function's own runtime identity — which requires that identity to hold
+**`roles/iam.serviceAccountTokenCreator` on itself**. This is not granted by
+default; without it, signed-URL generation fails in production with
+`Cannot sign data without client_email`, the same error hit locally before
+the dev-only key workaround below existed.
+
+**Before first deploying the `api` function to any environment** (staging,
+prod), grant the deployed Functions runtime service account that role on
+itself:
+
+```bash
+firebase use <staging-or-prod>
+# find the runtime SA Cloud Functions actually uses (printed by `firebase deploy`,
+# or Console → Cloud Functions → <api function> → Details → Service account)
+gcloud iam service-accounts add-iam-policy-binding <runtime-sa-email> \
+  --member="serviceAccount:<runtime-sa-email>" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --project=<project-id>
+```
+
+Add this to the pre-launch checklist for each new environment — it's easy to
+forget since local dev doesn't need it (see DEVELOPMENT.md's
+`GOOGLE_APPLICATION_CREDENTIALS` / `dev-signer-key.json` note, which is a
+local-only substitute, never used in deployed environments).
+
+---
+
+## 7. Pre-Launch Checklist
 
 See `PHASE_SPECS.md`'s "Final Launch & Deployment" section for the full pre-launch checklist (load testing, security audit, monitoring, etc.) — not reproduced here to avoid the two documents drifting out of sync.
 
 ---
 
-## 7. Related Documents
+## 8. Related Documents
 
 - **DEVELOPMENT.md** — local dev setup (this is deploy; that is local)
 - **PHASE_SPECS.md** — phase-by-phase roadmap, including Phase 0.1's infra setup steps (reusable template for standing up staging/prod)

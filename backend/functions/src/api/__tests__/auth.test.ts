@@ -7,6 +7,11 @@ jest.mock('../../firebaseAdmin', () => ({
     verifyIdToken: jest.fn(),
     revokeRefreshTokens: jest.fn(),
   },
+  db: { collection: jest.fn() },
+}));
+
+jest.mock('../../services/userService', () => ({
+  ensureUserRecord: jest.fn(),
 }));
 
 const app = createApp();

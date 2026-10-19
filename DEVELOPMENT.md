@@ -61,7 +61,43 @@ firebase emulators:start --only auth,firestore,functions
 
 The Functions emulator does **not** auto-rebuild on source changes — rerun
 `npm run build` inside `backend/functions` after editing `backend/functions/src/**`
-and restart the emulator to pick it up.
+**and restart** `firebase emulators:start` to pick it up (a rebuild alone,
+without restarting, silently keeps serving the old routes).
+
+**`backend/functions/.env`:** needed for any config the Functions runtime
+doesn't auto-detect (e.g. the Storage bucket — project ID auto-detects
+fine, bucket doesn't). `FIREBASE_*`/`GCLOUD_*`/`X_GOOGLE_*`/`EXT_*` are
+reserved prefixes there — using one makes the *entire* `.env` file fail to
+load (silently, as "Failed to load function definition from source" deep
+in the emulator log, not an obvious error), which is why
+`STORAGE_BUCKET_NAME` is used instead of `FIREBASE_STORAGE_BUCKET` in that
+specific file even though the root-level `.env` uses the latter.
+
+**Generating Storage signed URLs locally** (`POST /api/reports/upload-url`,
+Phase 1.1): `getSignedUrl()` needs real signing credentials — either a
+private key file, or (what deployed Cloud Functions get) the ability to call
+the IAM `signBlob` API as its own identity. Neither is available to the
+emulator by default, which fails with `Cannot sign data without
+client_email`. The fix is a dedicated local-only service account:
+`pattern-mirror-dev-signer@pattern-mirror-dev.iam.gserviceaccount.com`,
+scoped to **Storage Object Admin on the dev bucket only** (granted at the
+bucket level, not project-wide). Its JSON key lives at
+`backend/functions/dev-signer-key.json` (gitignored, never commit it) and
+`backend/functions/.env` points `STORAGE_SIGNING_KEY_PATH` at it —
+`uploadService.ts`'s `signingBucket()` helper uses that path to build a
+dedicated `@google-cloud/storage` client for signing only, falling back to
+the normal Admin SDK bucket (which works fine in production) when the var
+isn't set.
+
+**Important:** this is deliberately *not* named
+`GOOGLE_APPLICATION_CREDENTIALS`. The Firebase CLI's own emulator startup
+sets that exact variable to the CLI login's ADC file before the function
+process's `.env` ever loads, and a preset env var isn't overridden by a
+later `.env` load — so a same-named value here would be silently shadowed.
+Confirmed empirically with a temporary debug log before landing on the
+dedicated-client approach instead. Not needed and not used in production —
+see `Coding Build Docs/DEPLOYMENT.md` section 6 for the deployed-environment
+equivalent (an IAM role grant, not a key file).
 
 **Enqueueing a task from a plain host script** (e.g. a one-off debug/admin
 script run via `ts-node`, not through a deployed/emulated function) needs

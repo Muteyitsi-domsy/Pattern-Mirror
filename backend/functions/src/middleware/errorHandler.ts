@@ -39,6 +39,10 @@ export function handleError(error: Error, res: Response): Response {
     });
   }
 
+  // Unrecognized error types are real bugs or infra failures — the client
+  // only sees a generic message, so this is the only record of what broke.
+  console.error('Unhandled error:', error);
+
   return res.status(500).json({
     error: 'server_error',
     message: 'An unexpected error occurred',

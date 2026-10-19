@@ -14,6 +14,7 @@
 /reports/{reportId}                — Completed reports
 /extraction_cache/{dataHash}       — Cached extractions (TTL)
 /checkouts/{checkoutId}            — Lemon Squeezy checkout/order tracking
+/uploads/{uploadId}                — Direct-to-Storage upload ownership tracking (TTL)
 /audit_logs/{timestamp}_{userId}   — User action audit trail
 ```
 
@@ -417,7 +418,51 @@ db.collection('checkouts')
 
 ---
 
-## 7. Collection: /audit_logs/{timestamp}_{userId}
+## 7. Collection: /uploads/{uploadId}
+
+**Purpose:** Tracks ownership of a direct-to-Cloud-Storage upload between
+`POST /api/reports/upload-url` and `POST /api/reports/create` (PHASE_SPECS.md
+1.1's design correction — large files upload straight to Storage via a
+signed URL, bypassing Cloud Functions' 32MB request-body limit). Without
+this doc, `uploadId` would be a bare capability token; an attacker who
+somehow obtained another user's UUID could consume their upload. With it,
+Create Report Job can check `userId` ownership and return 404 instead.
+
+**Document Schema:**
+```json
+{
+  "uploadId": "upload_abc123",                     // Primary key (UUID)
+  "userId": "user_abc123",                          // FK to users
+  "storagePath": "temp/upload_abc123/journal.csv",
+  "fileName": "mood_journal_march.csv",
+  "createdAt": "2025-06-14T10:30:00Z",
+  "consumedByJobId": null                           // Set once a job is created from this upload
+}
+```
+
+**Constraints:**
+- `uploadId`: Unique
+- One upload is consumed by at most one job — `createReport` should treat
+  an already-consumed upload the same as not-found, to prevent a client
+  retry from accidentally reusing a stale upload rather than requesting a
+  fresh one
+
+**Queries:**
+```
+// Lookup for ownership check + consumption
+db.collection('uploads').doc(uploadId).get()
+
+// Mark consumed
+db.collection('uploads').doc(uploadId).update({ consumedByJobId: jobId })
+```
+
+**TTL:**
+- Delete after 24 hours (an upload that's never turned into a job is abandoned — matches the `temp/` Storage path's own lifecycle)
+- Firestore TTL policy: `createdAt` + 24 hours
+
+---
+
+## 8. Collection: /audit_logs/{timestamp}_{userId}
 
 **Purpose:** Track all user actions for security and debugging.
 
@@ -456,7 +501,7 @@ db.collection('audit_logs')
 
 ---
 
-## 8. Security Rules (Firestore)
+## 9. Security Rules (Firestore)
 
 ```javascript
 rules_version = '2';
@@ -501,6 +546,14 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if false;
     }
+
+    // Uploads: users can read their own; only backend (Admin SDK) creates/updates
+    match /uploads/{uploadId} {
+      allow read: if resource.data.userId == request.auth.uid;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
     
     // Audit logs: users can read their own
     match /audit_logs/{logId} {
@@ -520,7 +573,7 @@ service cloud.firestore {
 
 ---
 
-## 9. Indexes to Create (Firestore Console)
+## 10. Indexes to Create (Firestore Console)
 
 **Collection: jobs**
 ```
@@ -547,7 +600,7 @@ service cloud.firestore {
 
 ---
 
-## 10. Data Cleanup / TTL Policies
+## 11. Data Cleanup / TTL Policies
 
 **Firestore TTL Policy Setup:**
 
@@ -563,11 +616,15 @@ Collection: reports
 Collection: extraction_cache
   Field: expiresAt (set to createdAt + 7 days)
   Behavior: Auto-delete after 7 days
+
+Collection: uploads
+  Field: createdAt + 24 hours
+  Behavior: Auto-delete after 24 hours (abandoned uploads)
 ```
 
 ---
 
-## 11. Backup & Recovery
+## 12. Backup & Recovery
 
 **Backup Strategy:**
 - Firestore automated backups (daily, 7-day retention)
@@ -580,7 +637,7 @@ Collection: extraction_cache
 
 ---
 
-## 12. Data Migration Examples
+## 13. Data Migration Examples
 
 ### Add a field to all documents
 ```javascript
@@ -616,7 +673,7 @@ await batch.commit();
 
 ---
 
-## 13. Related Documents
+## 14. Related Documents
 
 - **ARCHITECTURE.md** — System design overview
 - **API_SPEC.md** — API endpoints that query this database

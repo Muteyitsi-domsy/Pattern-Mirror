@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { auth } from '../firebaseAdmin';
+import { ensureUserRecord } from '../services/userService';
+import { handleError } from './errorHandler';
 
 /**
  * Verifies the Firebase ID token in the Authorization header and attaches
@@ -21,6 +23,8 @@ export async function verifyFirebaseToken(
     return;
   }
 
+  let userId: string;
+
   try {
     // checkRevoked: true — without it, a revoked refresh token (e.g. after
     // logout) has no effect on an already-issued ID token until it expires
@@ -29,7 +33,19 @@ export async function verifyFirebaseToken(
     // resolution, so a logout in the same UTC second as the original sign-in
     // won't register as revoked yet — expected Firebase behavior, not a bug here.
     const decoded = await auth.verifyIdToken(token, true);
-    req.userId = decoded.uid;
+    userId = decoded.uid;
+    req.userId = userId;
+
+    try {
+      // Separate try/catch: a Firestore failure here is a real server_error,
+      // not an authentication failure — conflating them would misreport a
+      // valid token as "invalid" when the actual problem is downstream.
+      await ensureUserRecord(userId, decoded.email);
+    } catch (error) {
+      handleError(error as Error, res);
+      return;
+    }
+
     next();
   } catch {
     res.status(401).json({

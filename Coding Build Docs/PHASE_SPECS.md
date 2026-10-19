@@ -242,17 +242,40 @@ await getFunctions().taskQueue<{ jobId: string }>('processReportJob').enqueue({ 
 
 **Tasks:**
 
+**Design correction (discovered during implementation):** the upload cannot
+go through `POST /api/reports/create`'s own request body as originally
+spec'd below — Cloud Functions gen2 hard-caps uncompressed HTTP request
+bodies at 32MB (non-configurable), and base64-encoding a 50MB file requires
+~66.7MB. The actual flow is two calls: `POST /api/reports/upload-url`
+(client gets a signed Cloud Storage URL, uploads the file directly — bytes
+never touch our API) then `POST /api/reports/create` referencing that
+upload by `uploadId` instead of embedding `journalFile`. Full request/
+response shapes: API_SPEC.md 4.3.
+
+### Backend API Endpoint: POST /api/reports/upload-url
+1. Validate `fileName`'s extension is supported (CSV, JSON, TXT, Markdown)
+2. Generate `uploadId`, build `storagePath = temp/{uploadId}/journal.{ext}`
+3. Create a V4 signed URL for a `PUT` to that path, ~15 min expiry
+4. Write `/uploads/{uploadId}` tracking the owning `userId` — Create Report
+   Job below checks this, so an attacker can't consume another user's
+   upload even if they somehow guessed the (otherwise unguessable) UUID
+5. Return `{uploadId, uploadUrl, storagePath}`
+
 ### Backend API Endpoint: POST /api/reports/create
 1. Implement request validation:
    - `dataType` is valid enum
+   - `uploadId` is present and references an upload owned by this user
    - `focusQuestions` has exactly 2 items
    - `frameworks` is array of 0-2 items
-   - File size ≤ 50MB
-   - File format is supported (CSV, JSON, TXT, Markdown)
 
-2. Implement file storage:
-   - Save to `gs://bucket/temp/{jobId}/journal.{ext}`
-   - Generate SHA256 hash of content for deduplication
+2. Resolve the upload:
+   - Look up `/uploads/{uploadId}`; 404 if missing or owned by a different user
+   - Confirm the object actually exists at `storagePath` in Cloud Storage (the
+     client may not have finished/started the direct PUT yet) and is ≤ 50MB
+     — this is the real enforcement point for the size limit now, not a
+     request-body check, since Storage has no such ceiling
+   - Download it to compute `journalCount`/hash — safe to do server-side at
+     any size; it's an internal Storage read, not an inbound HTTP request
 
 3. Implement Lemon Squeezy payment check:
    - If user is `free` tier and not Renew90: require a paid checkout ($49-59) before this job starts
@@ -269,6 +292,7 @@ await getFunctions().taskQueue<{ jobId: string }>('processReportJob').enqueue({ 
      progress: 0,
      dataType,
      journalCount: calculateLineCount(file),
+     journalStoragePath: storagePath,
      focusQuestions,
      frameworks,
      createdAt: now,
@@ -293,13 +317,15 @@ await getFunctions().taskQueue<{ jobId: string }>('processReportJob').enqueue({ 
   /functions
     api/
       reports.ts
+        - POST /api/reports/upload-url
         - POST /api/reports/create
   /services
     uploadService.ts
-      - validateFile()
+      - createUploadUrl()
+      - getUploadedFile()
       - detectDataType()
       - hashContent()
-      - storeInCloudStorage()
+      - calculateLineCount()
     paymentService.ts
       - checkPaymentRequired()
       - createLemonSqueezyCheckout()
@@ -309,20 +335,24 @@ await getFunctions().taskQueue<{ jobId: string }>('processReportJob').enqueue({ 
 ```
 
 **Tests:**
-1. Upload valid CSV → 202 OK, jobId returned
-2. Upload invalid data type → 400 validation error
-3. Upload file too large (60MB) → 400 error
-4. Upload with 1 focus question → 400 validation error
-5. Payment declined → 402 error
-6. Successful upload for Renew90 user → 202 OK, no charge
-7. Check job status → status is "queued"
+1. Request upload URL for a valid CSV filename → 200, signed URL returned
+2. Request upload URL for an unsupported extension → 400
+3. Create report with a completed, owned upload → 202 OK, jobId returned
+4. Create report with someone else's `uploadId` → 400 "Upload not found" (not a leak of "wrong owner", just "not found" — see API_SPEC.md 4.3)
+5. Create report with an `uploadId` that was never actually uploaded to → 400
+6. Create report with invalid data type → 400 validation error
+7. Create report with 1 focus question → 400 validation error
+8. Payment declined → 402 error
+9. Successful upload for Renew90 user → 202 OK, no charge
+10. Check job status → status is "queued"
 
 **Acceptance Criteria:**
-- File upload endpoint functional
+- Upload URL + create-report endpoints functional
 - Validation catches all error cases
 - Jobs created in Firestore
-- File stored in Cloud Storage
+- File stored in Cloud Storage (via direct client upload, not proxied through the API)
 - Payment required for non-Renew90 users
+- A 50MB file genuinely works end-to-end (not silently capped by Cloud Functions' request-size limit)
 
 ---
 
